@@ -33,13 +33,27 @@ module WebSocket
   	class Base < Connection
 
 			def receive_data(data)
+				# this is not very efficient method to differ the data
+				# need to fix it later
 				data_split = data.split("\r\n").map{|line| line.downcase}
-				if data_split.include?("connection: upgrade") || data_split.include?("upgrade: websocket")
-					super
+				if data_split.include?("get / http/1.1")
+					if data_split.include?("connection: upgrade") || data_split.include?("upgrade: websocket")
+						case @state
+			        when :connecting then handle_connecting(data)
+			        when :open then handle_open(data)
+			        when :closing then handle_closing(data)
+		        end
+					else
+						web_server = WebServer.new(data)
+						send_data(web_server.response)
+						close_connection_after_writing
+					end
 				else
-					web_server = WebServer.new(data)
-					send_data(web_server.response)
-					close_connection_after_writing
+					case @state
+		        when :connecting then handle_connecting(data)
+		        when :open then handle_open(data)
+		        when :closing then handle_closing(data)
+	        end
 				end
 
 			end
