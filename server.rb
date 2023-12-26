@@ -49,8 +49,8 @@ end
 
 def setup_forwarding
   `echo 1 > /proc/sys/net/ipv4/ip_forward`
-  `iptables -t nat -A POSTROUTING -o #{DEV_MAIN_INTERFACE} -j MASQUERADE`
-  `iptables -A FORWARD -i #{DEV_NAME} -j ACCEPT`
+  IO.popen(["iptables", "-t", "nat", "-A", "POSTROUTING", "-o", DEV_MAIN_INTERFACE, "-j", "MASQUERADE"]).close
+	IO.popen(["iptables", "-A", "FORWARD", "-i", DEV_NAME, "-j", "ACCEPT"]).close
 end
 
 def close_tun(tun)
@@ -138,7 +138,7 @@ EM.run do
         ws.set_id(uuid)
         address = lease_address(uuid)
         ws.send("#{CONN_LEASE}/#{address}-#{DEV_NETMASK}-#{PUBLIC_IP}")
-        ws.set_status(LEASED_ADDRESSES)
+        ws.set_status(CONN_LEASE)
       when CONN_CLOSE
         puts request
         if ws.get_id.nil?
@@ -189,9 +189,10 @@ EM.run do
 
     ws.onclose do |_c|
       puts 'Client disconnected'
-      if id = ws.get_id
+      id = ws.get_id
+      unless id.nil?
         free_address(id)
-        THREADS[id].exit
+        THREADS[id].exit if THREADS[id]
       end
     end
   end
