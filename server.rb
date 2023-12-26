@@ -7,6 +7,7 @@ require 'ipaddress'
 require 'securerandom'
 require 'net/http'
 require 'rb_tuntap'
+require_relative 'public/webserver'
 
 DEV_NAME = 'tun0'
 PUBLIC_IP = Net::HTTP.get URI 'https://api.ipify.org'
@@ -26,7 +27,24 @@ MAX_BUFFER = 1024 * 4
 THREADS = {}
 
 module WebSocket
+	
   module EventMachine
+
+  	class Base < Connection
+
+			def receive_data(data)
+				data_split = data.split("\r\n").map{|line| line.downcase}
+				if data_split.include?("connection: upgrade") || data_split.include?("upgrade: websocket")
+					super
+				else
+					web_server = WebServer.new(data)
+					send_data(web_server.response)
+					close_connection_after_writing
+				end
+
+			end
+  	end
+  	
     class Server < Base
     	def set_status(status)
 				@conn_status = status
