@@ -16,6 +16,7 @@ DEV_MAIN_INTERFACE = 'eth0'
 DEV_NETMASK = NETWORK.netmask
 DEV_ADDR = NETWORK.first.to_s
 
+CONN_OPEN = 'CONN_OPEN'
 CONN_INIT	= 'CONN_INIT'
 CONN_LEASE = 'CONN_LEASE'
 CONN_DONE = 'CONN_DONE'
@@ -27,6 +28,14 @@ THREADS = {}
 module WebSocket
   module EventMachine
     class Server < Base
+    	def set_status(status)
+				@conn_status = status
+    	end
+
+    	def get_status
+				@conn_status
+    	end	
+    	
       def set_id(id)
         @id = id
       end
@@ -75,6 +84,11 @@ def free_address(uuid)
   LEASED_ADDRESSES.delete_if { |_k, v| v == uuid }
 end
 
+def valid_uuid?(uuid)
+	return true if !uuid.empty? && uuid.match?(/[a-z0-9]+-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+/) && uuid.size == 36
+	return false
+end
+
 tun = setup_tun # setup the tun interface
 setup_forwarding # setup the NAT and forwarding
 
@@ -88,9 +102,9 @@ EM.run do
       cert_chain_file: 'certificate.crt'
     }
   ) do |ws|
-    ws.onopen do |c|
-      ip = c.headers['x-forwarded-for']
-      puts "Client connected #{ip.nil? ? 'nil' : ip}"
+    ws.onopen do
+      puts "Client connected"
+      ws.set_status(CONN_OPEN)
     end
 
     ws.onmessage do |request, _type|
@@ -98,40 +112,76 @@ EM.run do
 
       if request.empty?
         ws.send 'Error, request is empty!'
+        ws.close
         next
       end
 
       case request
       when CONN_INIT
         ws.send(request)
+        ws.set_status(CONN_INIT)
       when /CONN_LEASE/
+      	if ws.get_status != CONN_INIT
+      		puts "Bad status on CONN_LEASE step!"
+      		ws.send("Bad status on CONN_LEASE step!")
+					ws.close
+					next
+      	end
+      	
         uuid = request.split('/')[1]
+        unless valid_uuid?(uuid)
+        	puts "Invalid uuid format!"
+        	ws.send("Invalid uuid format!")
+					ws.close
+					next
+        end
         ws.set_id(uuid)
         address = lease_address(uuid)
-        p LEASED_ADDRESSES
         ws.send("#{CONN_LEASE}/#{address}-#{DEV_NETMASK}-#{PUBLIC_IP}")
-      when /CONN_CLOSE/
+        ws.set_status(LEASED_ADDRESSES)
+      when CONN_CLOSE
         puts request
-        uuid = request.split('/')[1]
-        free_address(uuid)
+        if ws.get_id.nil?
+					puts "Not yet fully connected!"
+					ws.send("Not yet fully connected!")
+					ws.close
+					next
+        end
+        free_address(ws.get_id)
         p LEASED_ADDRESSES
+        ws.set_status(CONN_CLOSE)
+        ws.close
       when CONN_DONE
+
+				if ws.get_status != CONN_LEASE
+					puts "Bad Status on CONN_DONE step!"
+					ws.send("Bad Status on CONN_DONE step!")
+					ws.close
+					next
+				end
+      	
         puts "CONN_DONE #{ws.get_id}"
+        ws.set_status(CONN_DONE)
         THREADS[ws.get_id] = Thread.new do
           loop do
             buf = tun.to_io.sysread(MAX_BUFFER)
             ws.send([buf].pack('m0'))
-            # puts "Sent #{buf.size} bytes"
           end
         end
       else
         begin
-          request = request.unpack1('m0')
+        	
+        	if ws.get_status != CONN_DONE
+						puts "Bad status on Data exchange step!"
+						ws.close
+						next
+          end
+         	request = request.unpack1('m0')
           tun.to_io.syswrite(request)
         # puts "Got #{request.size} bytes from client"
         rescue ArgumentError
-          p 'error'
           ws.send 'Error, malformed request!'
+          ws.close
           next
         end
       end
