@@ -14,7 +14,8 @@ class WebServer
 		@data = data
 		@http_version = "HTTP/1.1"
 		@server_name = "express.js"
-		@index_html = File.read("index.html")
+		@path		 = Dir.pwd + "/" + "public"
+		@index_html = File.read("#{@path}/index.html")
 	end
 
 	def response
