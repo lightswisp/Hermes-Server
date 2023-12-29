@@ -140,8 +140,8 @@ EM.run do
     port: 443,
     secure: true,
     tls_options: {
-      private_key_file: 'private.key',
-      cert_chain_file: 'certificate.crt'
+      private_key_file: KEY_PATH,
+      cert_chain_file: CERT_PATH
     }
   ) do |ws|
     ws.onopen do
