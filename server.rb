@@ -13,6 +13,7 @@ DEV_NAME = 'tun0'
 PUBLIC_IP = Net::HTTP.get URI 'https://api.ipify.org'
 LEASED_ADDRESSES = {} # All clients are gonna be here
 NETWORK = IPAddress('192.168.0.0/24')
+DNS_ADDR = "8.8.8.8" # google dns for clients
 DEV_MAIN_INTERFACE = 'eth0'
 DEV_NETMASK = NETWORK.netmask
 DEV_ADDR = NETWORK.first.to_s
@@ -117,7 +118,7 @@ def free_address(uuid)
 end
 
 def valid_uuid?(uuid)
-	return true if !uuid.empty? && uuid.match?(/[a-z0-9]+-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+/) && uuid.size == 36
+	return true if !uuid.empty? && uuid.match?(/([a-z0-9]+-){4}[a-z0-9]+/) && uuid.size == 36
 	return false
 end
 
@@ -169,7 +170,7 @@ EM.run do
         end
         ws.set_id(uuid)
         address = lease_address(uuid)
-        ws.send("#{CONN_LEASE}/#{address}-#{DEV_NETMASK}-#{PUBLIC_IP}")
+        ws.send("#{CONN_LEASE}/#{address}-#{DEV_NETMASK}-#{PUBLIC_IP}-#{DNS_ADDR}")
         ws.set_status(CONN_LEASE)
       when CONN_CLOSE
         puts request
