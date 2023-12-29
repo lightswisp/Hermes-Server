@@ -9,6 +9,15 @@ require 'net/http'
 require 'rb_tuntap'
 require_relative 'public/webserver'
 
+CERT_PATH = "/etc/hermes/certificate.crt"
+KEY_PATH  = "/etc/hermes/private.key"
+Dir.mkdir('/etc/hermes') unless Dir.exist('/etc/hermes')
+
+unless File.exist?("/etc/hermes/certificate.crt") && File.exist?("/etc/hermes/private.key")
+	puts "No certificate.crt and private.key files found!".red.bold
+	exit
+end
+
 DEV_NAME = 'tun0'
 PUBLIC_IP = Net::HTTP.get URI 'https://api.ipify.org'
 LEASED_ADDRESSES = {} # All clients are gonna be here
