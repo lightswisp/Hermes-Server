@@ -46,7 +46,7 @@ module WebSocket
 				# this is not very efficient method to differ the data
 				# need to fix it later
 				data_split = data.split("\r\n").map{|line| line.downcase}
-				if data_split.include?("get / http/1.1")
+				if data_split[0].match?(/[a-z]+\s\/.*\shttp\/1\.1/)
 					if data_split.include?("connection: upgrade") || data_split.include?("upgrade: websocket")
 						case @state
 			        when :connecting then handle_connecting(data)
