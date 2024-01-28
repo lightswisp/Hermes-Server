@@ -1,0 +1,27 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    bindata (2.4.15)
+    colorize (1.1.0)
+    eventmachine (1.2.7)
+    rb_tuntap (0.2.0-x86_64-linux)
+    websocket (1.2.10)
+    websocket-eventmachine-base (1.2.0)
+      eventmachine (~> 1.0)
+      websocket (~> 1.0)
+      websocket-native (~> 1.0)
+    websocket-eventmachine-server (1.0.1)
+      websocket-eventmachine-base (~> 1.0)
+    websocket-native (1.0.0)
+
+PLATFORMS
+  x86_64-linux
+
+DEPENDENCIES
+  bindata
+  colorize
+  rb_tuntap
+  websocket-eventmachine-server
+
+BUNDLED WITH
+   2.4.18

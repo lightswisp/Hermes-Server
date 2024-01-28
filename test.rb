@@ -7,10 +7,8 @@ require 'timeout'
 require 'ipaddress'
 require 'securerandom'
 require 'net/http'
-require_relative 'tun'
+require 'rb_tuntap'
 require_relative 'public/webserver'
-
-include RubyTun
 
 CERT_PATH = '/etc/hermes/certificate.crt'
 KEY_PATH  = '/etc/hermes/private.key'
@@ -24,7 +22,7 @@ end
 DEV_NAME = 'tun0'
 PUBLIC_IP = Net::HTTP.get URI 'https://api.ipify.org'
 LEASED_ADDRESSES = {} # All clients are gonna be here
-NETWORK = IPAddress('172.16.8.0/24')
+NETWORK = IPAddress('10.0.0.0/24')
 DNS_ADDR = '8.8.8.8' # google dns for clients
 DEV_MAIN_INTERFACE = 'eth0'
 DEV_NETMASK = NETWORK.netmask
@@ -36,6 +34,10 @@ CONN_LEASE = 'CONN_LEASE'
 CONN_DONE = 'CONN_DONE'
 CONN_CLOSE = 'CONN_CLOSE'
 MAX_BUFFER = 1024 * 4
+
+LINUX_IFF_TUN = 0x0001
+LINUX_IFF_NO_PI = 0x1000
+LINUX_TUNSETIFF = 0x400454CA
 
 THREADS = {}
 
@@ -89,11 +91,10 @@ module WebSocket
 end
 
 def setup_forwarding
-  File.write('/proc/sys/net/ipv4/ip_forward', '1')
+  `echo 1 > /proc/sys/net/ipv4/ip_forward`
   IO.popen(['iptables', '-t', 'nat', '-A', 'POSTROUTING', '-o', DEV_MAIN_INTERFACE, '-j', 'MASQUERADE']).close
   IO.popen(['iptables', '-A', 'FORWARD', '-i', DEV_NAME, '-j', 'ACCEPT']).close
   IO.popen(['iptables', '-A', 'FORWARD', '-o', DEV_NAME, '-j', 'ACCEPT']).close
-  puts 'Forwarding is done!'
 end
 
 def close_tun(tun)
@@ -104,13 +105,26 @@ def close_tun(tun)
 end
 
 def setup_tun
-  tun = RubyTun::TunDevice.new(DEV_NAME)
-  tun.open
-  tun.init
-  tun.set_addr(DEV_ADDR)
-  tun.set_netmask(DEV_NETMASK)
-  tun.up
-  tun.tun
+  `ip tuntap add dev tun0 mode tun`
+  `ip link set tun0 up`
+  `ip addr add 10.0.0.1/24 dev tun0`
+
+  fd = IO.sysopen('/dev/net/tun', 'r+')
+  p fd
+  tun = IO.new(fd, 'r+')
+  p tun
+
+  flags = LINUX_IFF_TUN | LINUX_IFF_NO_PI
+  ifs = ['tun0', flags, ''].pack('a16LH40')
+
+  p ifs
+  tun.ioctl(LINUX_TUNSETIFF, ifs)
+
+  trap 'SIGINT' do
+    close_tun(tun)
+  end
+
+  tun
 end
 
 def lease_address(uuid)
@@ -205,8 +219,8 @@ EM.run do
         ws.set_status(CONN_DONE)
         THREADS[ws.get_id] = Thread.new do
           loop do
-            buf = tun.to_io.sysread(MAX_BUFFER)
-            #p "RECV #{buf}"
+            buf = tun.sysread(MAX_BUFFER)
+            # p "SENT: #{buf}"
             ws.send([buf].pack('m0'))
           end
         end
@@ -218,12 +232,9 @@ EM.run do
             next
           end
           request = request.unpack1('m0')
-
-          begin
-            tun.to_io.syswrite(request)
-          rescue StandardError
-            puts 'Ivalid packet'
-          end
+          tun.syswrite(request)
+        # puts "Got #{request.size} bytes from client"
+        # p "RECV: #{request}"
         rescue ArgumentError
           ws.send 'Error, malformed request!'
           ws.close
