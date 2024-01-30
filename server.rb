@@ -38,7 +38,6 @@ CONN_CLOSE = 'CONN_CLOSE'
 MAX_BUFFER = 1024 * 4
 
 THREADS = {}
-PEERS = {}
 
 module WebSocket
   module EventMachine
@@ -118,15 +117,15 @@ def setup_tun
   tun.tun
 end
 
-def lease_address(peername)
+def lease_address(ws)
   free_addresses = NETWORK.to_a[2...-1].reject { |x| LEASED_ADDRESSES.include?(x.to_s) }
   random_address = free_addresses.sample.to_s
-  LEASED_ADDRESSES.merge!(random_address => peername)
+  LEASED_ADDRESSES.merge!(random_address => ws)
   random_address
 end
 
 def free_address(peername)
-  LEASED_ADDRESSES.delete_if { |_k, v| v == peername }
+  LEASED_ADDRESSES.delete_if { |k, v| k == peername }
 end
 
 
@@ -169,16 +168,18 @@ EM.run do
           next
         end
 		# need to check if address pool is empty
-        address = lease_address(ws.get_peer)
+        address = lease_address(ws)
         ws.set_peer(address)
         ws.send("#{CONN_LEASE}/#{address}-#{DEV_NETMASK}-#{PUBLIC_IP}-#{DNS_ADDR}")
         ws.set_status(CONN_LEASE)
       when CONN_CLOSE
       	peer = ws.get_peer
-        free_address(peer) if [CONN_LEASE, CONN_DONE].include?(ws.get_status)
-        if THREADS[peer]
-			THREADS[peer].exit 
-			THREADS.delete(peer)
+      	unless peer.nil?
+	        free_address(peer) if [CONN_LEASE, CONN_DONE].include?(ws.get_status)
+	        if THREADS[peer]
+				THREADS[peer].exit 
+				THREADS.delete(peer)
+	        end
         end
         p "Leased addresses: #{LEASED_ADDRESSES}"
         
@@ -195,15 +196,15 @@ EM.run do
 
         puts "CONN_DONE #{ws.get_peer}"
         ws.set_status(CONN_DONE)
-        PEERS[ws.get_peer] = ws
+      
         THREADS[ws.get_peer] = Thread.new(ws) do |ws|
           loop do
             buf = tun.to_io.sysread(MAX_BUFFER)
             buf_bytes = buf.unpack("C*")
             ip_destination = buf_bytes[16...20].join(".")
             
-            if PEERS[ip_destination]
-            	PEERS[ip_destination].send([buf].pack('m0'))
+            if LEASED_ADDRESSES[ip_destination]
+            	LEASED_ADDRESSES[ip_destination].send([buf].pack('m0'))
             else
             	next
             end
