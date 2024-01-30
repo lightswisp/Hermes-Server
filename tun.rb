@@ -146,13 +146,12 @@ module RubyTun
       end
       ifr.iu.ifr_flags = RubyTun::Tun | RubyTun::NoPi
       ifr.ifr_name = [@name].pack('a16')
-      p ifr.ifr_name[0]
       ifr_size = ifr.to_ptr.size
       @tun = IO.new(@fd, 'r+b')
       flags = ifr[0, ifr_size]
       begin
         @tun.ioctl(RubyTun::TUNSETIFF, flags)
-        @tun.ioctl(TUNSETOWNER, 1000)
+        @tun.ioctl(RubyTun::TUNSETOWNER, 1000)
       rescue Errno::EPERM
         puts 'Operation not permitted'
         exit(1)

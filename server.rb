@@ -38,11 +38,14 @@ CONN_CLOSE = 'CONN_CLOSE'
 MAX_BUFFER = 1024 * 4
 
 THREADS = {}
+PEERS = {}
 
 module WebSocket
   module EventMachine
     class Base < Connection
       def receive_data(data)
+        # port, ip = Socket.unpack_sockaddr_in(get_peername)
+        # puts "got #{data.inspect} from #{ip}:#{port}"
         # this is not very efficient method to differ the data
         # need to fix it later
         data_split = data.split("\r\n").map { |line| line.downcase }
@@ -69,6 +72,15 @@ module WebSocket
     end
 
     class Server < Base
+
+	  def set_peer(peername)
+		@peername = peername
+	  end
+
+	  def get_peer
+		return @peername
+	  end
+      
       def set_status(status)
         @conn_status = status
       end
@@ -77,13 +89,6 @@ module WebSocket
         @conn_status
       end
 
-      def set_id(id)
-        @id = id
-      end
-
-      def get_id
-        @id
-      end
     end
   end
 end
@@ -113,22 +118,17 @@ def setup_tun
   tun.tun
 end
 
-def lease_address(uuid)
+def lease_address(peername)
   free_addresses = NETWORK.to_a[2...-1].reject { |x| LEASED_ADDRESSES.include?(x.to_s) }
   random_address = free_addresses.sample.to_s
-  LEASED_ADDRESSES.merge!(random_address => uuid)
+  LEASED_ADDRESSES.merge!(random_address => peername)
   random_address
 end
 
-def free_address(uuid)
-  LEASED_ADDRESSES.delete_if { |_k, v| v == uuid }
+def free_address(peername)
+  LEASED_ADDRESSES.delete_if { |_k, v| v == peername }
 end
 
-def valid_uuid?(uuid)
-  return true if !uuid.empty? && uuid.match?(/([a-z0-9]+-){4}[a-z0-9]+/) && uuid.size == 36
-
-  false
-end
 
 tun = setup_tun # setup the tun interface
 setup_forwarding # setup the NAT and forwarding
@@ -145,12 +145,12 @@ EM.run do
   ) do |ws|
     ws.onopen do
       puts 'Client connected'
+      
       ws.set_status(CONN_OPEN)
     end
 
     ws.onmessage do |request, _type|
       # puts "Received message: #{request}"
-
       if request.empty?
         ws.send 'Error, request is empty!'
         ws.close
@@ -161,35 +161,27 @@ EM.run do
       when CONN_INIT
         ws.send(request)
         ws.set_status(CONN_INIT)
-      when /CONN_LEASE/
+      when CONN_LEASE
         if ws.get_status != CONN_INIT
           puts 'Bad status on CONN_LEASE step!'
           ws.send('Bad status on CONN_LEASE step!')
           ws.close
           next
         end
-
-        uuid = request.split('/')[1]
-        unless valid_uuid?(uuid)
-          puts 'Invalid uuid format!'
-          ws.send('Invalid uuid format!')
-          ws.close
-          next
-        end
-        ws.set_id(uuid)
-        address = lease_address(uuid)
+		# need to check if address pool is empty
+        address = lease_address(ws.get_peer)
+        ws.set_peer(address)
         ws.send("#{CONN_LEASE}/#{address}-#{DEV_NETMASK}-#{PUBLIC_IP}-#{DNS_ADDR}")
         ws.set_status(CONN_LEASE)
       when CONN_CLOSE
-        puts request
-        if ws.get_id.nil?
-          puts 'Not yet fully connected!'
-          ws.send('Not yet fully connected!')
-          ws.close
-          next
+      	peer = ws.get_peer
+        free_address(peer) if [CONN_LEASE, CONN_DONE].include?(ws.get_status)
+        if THREADS[peer]
+			THREADS[peer].exit 
+			THREADS.delete(peer)
         end
-        free_address(ws.get_id)
-        p LEASED_ADDRESSES
+        p "Leased addresses: #{LEASED_ADDRESSES}"
+        
         ws.set_status(CONN_CLOSE)
         ws.close
       when CONN_DONE
@@ -201,13 +193,21 @@ EM.run do
           next
         end
 
-        puts "CONN_DONE #{ws.get_id}"
+        puts "CONN_DONE #{ws.get_peer}"
         ws.set_status(CONN_DONE)
-        THREADS[ws.get_id] = Thread.new do
+        PEERS[ws.get_peer] = ws
+        THREADS[ws.get_peer] = Thread.new(ws) do |ws|
           loop do
             buf = tun.to_io.sysread(MAX_BUFFER)
-            #p "RECV #{buf}"
-            ws.send([buf].pack('m0'))
+            buf_bytes = buf.unpack("C*")
+            ip_destination = buf_bytes[16...20].join(".")
+            
+            if PEERS[ip_destination]
+            	PEERS[ip_destination].send([buf].pack('m0'))
+            else
+            	next
+            end
+           
           end
         end
       else
@@ -218,8 +218,12 @@ EM.run do
             next
           end
           request = request.unpack1('m0')
-
           begin
+          	request_bytes = request.unpack("C*")
+          	ip_version = ((request_bytes[0] & 0xF0) >> 4)
+          	next unless ip_version == 4 # ipv4 packet
+          	ip_destination = request_bytes[16...20].join(".")
+          	next if ip_destination == "255.255.255.255" # if broadcast
             tun.to_io.syswrite(request)
           rescue StandardError
             puts 'Ivalid packet'
@@ -234,10 +238,14 @@ EM.run do
 
     ws.onclose do |_c|
       puts 'Client disconnected'
-      id = ws.get_id
-      unless id.nil?
-        free_address(id)
-        THREADS[id].exit if THREADS[id]
+      peer = ws.get_peer
+      
+      unless peer.nil?
+        free_address(peer) if [CONN_LEASE, CONN_DONE].include?(ws.get_status)
+        if THREADS[peer]
+			THREADS[peer].exit 
+			THREADS.delete(peer)
+        end
       end
     end
   end
