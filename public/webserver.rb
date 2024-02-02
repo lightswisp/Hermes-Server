@@ -20,6 +20,12 @@ class WebServer
 
   def response
     r = "#{@http_version} #{StatusCodes::SUCCESS}\r\n"
+    r += "Strict-Transport-Security: max-age=31536000; includeSubDomains\r\n"
+    r += "Content-Security-Policy: script-src 'self'\r\n"
+    r += "X-Frame-Options: SAMEORIGIN\r\n"
+    r += "X-Content-Type-Options: nosniff\r\n"
+    r += "Referrer-Policy: no-referrer\r\n"
+    r+= "Content-Type: text/html; charset=utf-8\r\n"
     r += "Connection: close\r\n"
     r += "Server: #{@server_name}\r\n"
     r += "\r\n"

@@ -139,7 +139,7 @@ EM.run do
     secure: true,
     tls_options: {
       private_key_file: KEY_PATH,
-      cert_chain_file: CERT_PATH
+      cert_chain_file: CERT_PATH,
     }
   ) do |ws|
     ws.onopen do
