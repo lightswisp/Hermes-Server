@@ -1,0 +1,14 @@
+body {
+  background-color: #121212;
+  color: #fff;
+  text-align: left; /* Align the text to the left */
+  margin: 0; /* Remove default margin */
+  padding: 0; /* Remove default padding */
+}
+.navbar {
+  background-color: #343a40;
+}
+.navbar-brand {
+  margin-right: 0; /* Remove default margin */
+}
+

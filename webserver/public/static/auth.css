@@ -1,0 +1,11 @@
+.form-horizontal {
+  padding: 15px;
+}
+.hermes-auth{
+	 background-color: #343a40;
+	 color: #fff;
+}
+
+.hermes-auth:hover{
+	color: #fff;
+}

@@ -8,7 +8,7 @@ require 'ipaddress'
 require 'securerandom'
 require 'net/http'
 require_relative 'tun'
-require_relative 'public/webserver'
+require_relative 'webserver/webserver'
 
 include RubyTun
 
