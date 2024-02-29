@@ -16,7 +16,7 @@ class WebServer
     
     @general_headers = {
     	"Strict-Transport-Security" => "max-age=31536000; includeSubDomains",
-    	"Content-Security-Policy" => "script-src 'self'",
+    	"Content-Security-Policy" => "script-src 'self' cdn.jsdelivr.net stackpath.bootstrapcdn.com code.jquery.com",
     	"X-Frame-Options" => "SAMEORIGIN",
     	"X-Content-Type-Options" => "nosniff",
     	"Referrer-Policy" => "no-referrer",
